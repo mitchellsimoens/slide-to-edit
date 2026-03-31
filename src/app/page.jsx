@@ -92,25 +92,8 @@ export default function ProfilePage() {
           boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 8px 32px rgba(0,0,0,0.08)',
         }}>
 
-          {/* Cover band */}
-          <div style={{
-            height: 72,
-            background: 'linear-gradient(160deg, #f5ede0 0%, #f0e8d8 50%, #ece4d4 100%)',
-            borderBottom: '1px solid var(--border)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}>
-            {/* Subtle dot grid */}
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: 'radial-gradient(circle, rgba(146,96,10,0.12) 1px, transparent 1px)',
-              backgroundSize: '20px 20px',
-            }} />
-          </div>
-
           {/* Identity section */}
-          <div style={{ padding: '0 28px', marginTop: '-40px' }}>
+          <div style={{ padding: '28px 28px 0' }}>
             <Avatar name={profile.fullName} />
 
             <div style={{ marginTop: '14px' }}>
