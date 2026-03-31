@@ -1,9 +1,9 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { Pencil } from 'lucide-react'
 
-const PENCIL_W = 28 // px width of the pencil button
+const PENCIL_W = 28
 
 export default function DragToEditField({
   label,
@@ -12,22 +12,20 @@ export default function DragToEditField({
   type = 'text',
   onSave,
 }) {
-  const [mode, setMode] = useState('idle') // 'idle' | 'editing'
+  const [mode, setMode] = useState('idle')
   const [value, setValue] = useState(initialValue)
   const [committed, setCommitted] = useState(initialValue)
   const [isDragging, setIsDragging] = useState(false)
-  const [pencilOffset, setPencilOffset] = useState(0) // px from resting position
+  const [pencilOffset, setPencilOffset] = useState(0)
   const [isSnapping, setIsSnapping] = useState(false)
 
   const containerRef = useRef(null)
   const inputRef = useRef(null)
   const pointerStartX = useRef(null)
   const modeAtDragStart = useRef(null)
-  const animFrameRef = useRef(null)
 
   const getFieldWidth = () => containerRef.current?.offsetWidth ?? 300
 
-  // ── Enter edit mode ────────────────────────────────────────────────────────
   const enterEdit = useCallback(() => {
     setIsSnapping(true)
     setMode('editing')
@@ -40,7 +38,6 @@ export default function DragToEditField({
     }, 350)
   }, [])
 
-  // ── Save ───────────────────────────────────────────────────────────────────
   const save = useCallback((val) => {
     const v = val !== undefined ? val : value
     setCommitted(v)
@@ -53,7 +50,6 @@ export default function DragToEditField({
     onSave?.(v)
   }, [value, onSave])
 
-  // ── Cancel ─────────────────────────────────────────────────────────────────
   const cancel = useCallback(() => {
     setValue(committed)
     setMode('idle')
@@ -63,14 +59,12 @@ export default function DragToEditField({
     pointerStartX.current = null
   }, [committed])
 
-  // ── Spring back (threshold not met) ───────────────────────────────────────
   const springBack = useCallback(() => {
     setIsDragging(false)
     setPencilOffset(0)
     pointerStartX.current = null
   }, [])
 
-  // ── Pointer handlers ───────────────────────────────────────────────────────
   const handlePointerDown = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -84,17 +78,11 @@ export default function DragToEditField({
   const handlePointerMove = useCallback((e) => {
     if (!isDragging || pointerStartX.current === null) return
     const dx = e.clientX - pointerStartX.current
-    const fieldW = getFieldWidth()
-    const maxTravel = fieldW - PENCIL_W - 8
-
+    const maxTravel = getFieldWidth() - PENCIL_W - 8
     if (modeAtDragStart.current === 'idle') {
-      // Constrain right-drag only (dx > 0)
-      const clamped = Math.max(0, Math.min(dx, maxTravel))
-      setPencilOffset(clamped)
+      setPencilOffset(Math.max(0, Math.min(dx, maxTravel)))
     } else {
-      // Constrain left-drag only (dx < 0)
-      const clamped = Math.min(0, Math.max(dx, -maxTravel))
-      setPencilOffset(clamped)
+      setPencilOffset(Math.min(0, Math.max(dx, -maxTravel)))
     }
   }, [isDragging])
 
@@ -102,41 +90,30 @@ export default function DragToEditField({
     if (!isDragging || pointerStartX.current === null) return
     const dx = e.clientX - pointerStartX.current
     const fieldW = getFieldWidth()
-
     if (modeAtDragStart.current === 'idle') {
-      if (dx / fieldW >= 0.8) {
-        enterEdit()
-      } else {
-        springBack()
-      }
+      dx / fieldW >= 0.8 ? enterEdit() : springBack()
     } else {
-      if (-dx / fieldW >= 0.8) {
-        save()
-      } else {
-        springBack()
-      }
+      -dx / fieldW >= 0.8 ? save() : springBack()
     }
   }, [isDragging, enterEdit, save, springBack])
 
   const handlePointerCancel = useCallback(() => springBack(), [springBack])
 
-  // ── Keyboard ───────────────────────────────────────────────────────────────
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') { e.preventDefault(); cancel() }
     if (e.key === 'Enter' && !multiline) { e.preventDefault(); save() }
   }, [cancel, save, multiline])
 
-  // ── Derived visual state ───────────────────────────────────────────────────
+  // Progress 0→1 for the sweep fill
   const fieldW = typeof window !== 'undefined' ? getFieldWidth() : 300
   const maxTravel = fieldW - PENCIL_W - 8
-  const rawProgress = isDragging
+  const progress = isDragging
     ? modeAtDragStart.current === 'idle'
       ? Math.max(0, Math.min(1, pencilOffset / maxTravel))
       : Math.max(0, Math.min(1, -pencilOffset / maxTravel))
     : 0
-  const atThreshold = rawProgress >= 0.8
+  const atThreshold = progress >= 0.8
 
-  // Fill div dimensions
   const fillStyle = isDragging ? {
     position: 'absolute',
     top: 0,
@@ -147,12 +124,11 @@ export default function DragToEditField({
       : { right: 0, width: `${-pencilOffset + PENCIL_W / 2}px` }
     ),
     background: atThreshold
-      ? 'linear-gradient(90deg, rgba(200,160,32,0.22) 0%, rgba(200,160,32,0.08) 100%)'
-      : 'linear-gradient(90deg, rgba(200,160,32,0.10) 0%, rgba(200,160,32,0.03) 100%)',
+      ? 'linear-gradient(90deg, rgba(146,96,10,0.14) 0%, rgba(146,96,10,0.05) 100%)'
+      : 'linear-gradient(90deg, rgba(146,96,10,0.07) 0%, rgba(146,96,10,0.02) 100%)',
     transition: 'background 0.12s ease',
   } : null
 
-  // Pencil button absolute positioning
   const pencilStyle = {
     position: 'absolute',
     top: multiline ? '12px' : '50%',
@@ -169,15 +145,13 @@ export default function DragToEditField({
     border: 'none',
     borderRadius: '6px',
     background: atThreshold
-      ? 'rgba(200,160,32,0.18)'
+      ? 'var(--accent-fill-strong)'
       : isDragging
-        ? 'rgba(200,160,32,0.09)'
+        ? 'var(--accent-fill)'
         : mode === 'editing'
-          ? 'rgba(200,160,32,0.07)'
+          ? 'rgba(146,96,10,0.07)'
           : 'transparent',
-    color: isDragging || mode === 'editing'
-      ? 'var(--accent)'
-      : 'var(--text-muted)',
+    color: isDragging || mode === 'editing' ? 'var(--accent)' : 'var(--text-muted)',
     transition: isDragging
       ? 'background 0.12s, color 0.12s'
       : 'background 0.25s, color 0.25s, transform 0.22s cubic-bezier(0.34,1.56,0.64,1)',
@@ -213,17 +187,16 @@ export default function DragToEditField({
           minHeight: multiline ? '72px' : '38px',
           display: 'flex',
           alignItems: multiline ? 'flex-start' : 'center',
-          borderBottom: `1px solid ${mode === 'editing' ? 'rgba(200,160,32,0.35)' : 'var(--border)'}`,
-          background: mode === 'editing' ? 'rgba(200,160,32,0.025)' : 'transparent',
+          borderBottom: `1px solid ${mode === 'editing' ? 'rgba(146,96,10,0.3)' : 'var(--border)'}`,
+          background: mode === 'editing' ? 'rgba(146,96,10,0.03)' : 'transparent',
           borderRadius: '4px 4px 0 0',
           overflow: 'hidden',
           transition: isSnapping ? 'none' : 'background 0.3s ease, border-color 0.3s ease',
         }}
       >
-        {/* Sweep fill */}
         {fillStyle && <div style={fillStyle} />}
 
-        {/* Text / input content */}
+        {/* Text / input */}
         <div style={{
           flex: 1,
           paddingLeft: mode === 'idle' ? `${PENCIL_W + 10}px` : '6px',
@@ -241,7 +214,7 @@ export default function DragToEditField({
               color: value ? 'var(--text-primary)' : 'var(--text-muted)',
               lineHeight: '1.5',
               userSelect: 'none',
-              opacity: isDragging ? 0.6 : 1,
+              opacity: isDragging ? 0.5 : 1,
               transition: 'opacity 0.15s',
               whiteSpace: multiline ? 'pre-wrap' : 'nowrap',
               overflow: 'hidden',

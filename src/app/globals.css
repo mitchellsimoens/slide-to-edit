@@ -1,14 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0d0b09;
-  --card: #131110;
-  --border: rgba(255, 255, 255, 0.055);
-  --text-primary: #ede8df;
-  --text-secondary: #5c5650;
-  --text-muted: #302e2c;
-  --accent: #c8a020;
-  --accent-glow: rgba(200, 160, 32, 0.15);
+  --bg: #ede9e3;
+  --card: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --text-primary: #1c1917;
+  --text-secondary: #78716c;
+  --text-muted: #c8c0b8;
+  --accent: #92600a;
+  --accent-fill: rgba(146, 96, 10, 0.1);
+  --accent-fill-strong: rgba(146, 96, 10, 0.18);
 }
 
 * {
@@ -25,22 +26,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Drag fill sweep animation */
-@keyframes sweep-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @keyframes snap-flash {
-  0% { background: rgba(200, 160, 32, 0.35); }
-  100% { background: rgba(200, 160, 32, 0.04); }
+  0%   { background: rgba(146, 96, 10, 0.14); }
+  100% { background: rgba(146, 96, 10, 0.03); }
 }
 
 .field-snap {
   animation: snap-flash 0.4s ease-out forwards;
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
