@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { Pencil } from 'lucide-react'
 
 const PENCIL_W = 28
@@ -14,191 +14,167 @@ export default function DragToEditField({
 }) {
   const [mode, setMode] = useState('idle')
   const [value, setValue] = useState(initialValue)
+  const [committed, setCommitted] = useState(initialValue)
   const [pencilOffset, setPencilOffset] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
   const [isSnapping, setIsSnapping] = useState(false)
 
+  // ── Refs for values that must be read synchronously in pointer handlers ──
   const containerRef = useRef(null)
-  const pencilRef = useRef(null)
   const inputRef = useRef(null)
+  const isDraggingRef = useRef(false)   // avoids stale-closure bug
+  const pointerStartX = useRef(null)
+  const modeAtDragStart = useRef(null)
 
-  // Refs for values that must be read inside stable event-handler closures.
-  // React state is async; refs are synchronous — critical for drag logic.
-  const modeRef      = useRef('idle')
-  const valueRef     = useRef(initialValue)
-  const committedRef = useRef(initialValue)
-  const onSaveRef    = useRef(onSave)
+  // Keep a render-triggering copy of isDragging only for visual effects
+  const [isDraggingVisual, setIsDraggingVisual] = useState(false)
 
-  // Keep refs in sync with latest props/state
-  useEffect(() => { modeRef.current  = mode   }, [mode])
-  useEffect(() => { onSaveRef.current = onSave }, [onSave])
+  const getFieldWidth = () => containerRef.current?.offsetWidth ?? 300
 
-  // ── All callbacks are intentionally stable (empty or ref-only deps) ───────
-
+  // ── Enter edit mode ──────────────────────────────────────────────────────
   const enterEdit = useCallback(() => {
     setIsSnapping(true)
     setMode('editing')
-    modeRef.current = 'editing'
-    setIsDragging(false)
+    isDraggingRef.current = false
+    setIsDraggingVisual(false)
     setPencilOffset(0)
+    pointerStartX.current = null
     setTimeout(() => {
       inputRef.current?.focus()
       setIsSnapping(false)
     }, 350)
   }, [])
 
-  const save = useCallback(() => {
-    const v = valueRef.current
-    committedRef.current = v
+  // ── Save ─────────────────────────────────────────────────────────────────
+  const save = useCallback((val) => {
+    const v = val !== undefined ? val : value
+    setCommitted(v)
     setValue(v)
     setMode('idle')
-    modeRef.current = 'idle'
-    setIsDragging(false)
+    isDraggingRef.current = false
+    setIsDraggingVisual(false)
     setPencilOffset(0)
     setIsSnapping(false)
-    onSaveRef.current?.(v)
-  }, []) // onSave accessed via ref — no dep needed
+    pointerStartX.current = null
+    onSave?.(v)
+  }, [value, onSave])
 
+  // ── Cancel ───────────────────────────────────────────────────────────────
   const cancel = useCallback(() => {
-    const v = committedRef.current
-    setValue(v)
-    valueRef.current = v
+    setValue(committed)
     setMode('idle')
-    modeRef.current = 'idle'
-    setIsDragging(false)
+    isDraggingRef.current = false
+    setIsDraggingVisual(false)
     setPencilOffset(0)
     setIsSnapping(false)
+    pointerStartX.current = null
+  }, [committed])
+
+  // ── Spring back (threshold not met) ──────────────────────────────────────
+  const springBack = useCallback(() => {
+    isDraggingRef.current = false
+    setIsDraggingVisual(false)
+    setPencilOffset(0)
+    pointerStartX.current = null
   }, [])
 
-  // ── Native DOM drag listeners ─────────────────────────────────────────────
-  // We deliberately avoid React synthetic events + setPointerCapture here.
-  // React's event delegation can be unreliable in SSR-hydrated Workers
-  // deployments (stale closures, hydration timing). Native addEventListener
-  // on the pencil element + window-level move/up is always reliable.
-  useEffect(() => {
-    const pencilEl   = pencilRef.current
-    const containerEl = containerRef.current
-    if (!pencilEl || !containerEl) return
+  // ── Pointer handlers ─────────────────────────────────────────────────────
+  const handlePointerDown = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    pointerStartX.current = e.clientX
+    modeAtDragStart.current = mode          // capture mode synchronously
+    isDraggingRef.current = true            // set ref synchronously
+    setIsDraggingVisual(true)              // trigger re-render for visuals
+    setPencilOffset(0)
+  }, [mode])
 
-    let active    = false
-    let startX    = 0
-    let startMode = 'idle'
-
-    const getW = () => containerEl.offsetWidth || 300
-
-    const onMove = (e) => {
-      if (!active) return
-      e.preventDefault() // prevent scroll while dragging
-      const dx  = e.clientX - startX
-      const max = getW() - PENCIL_W - 8
-      setPencilOffset(
-        startMode === 'idle'
-          ? Math.max(0, Math.min(dx, max))
-          : Math.min(0, Math.max(dx, -max))
-      )
+  const handlePointerMove = useCallback((e) => {
+    // Read from ref — guaranteed current even before React re-renders
+    if (!isDraggingRef.current || pointerStartX.current === null) return
+    const dx = e.clientX - pointerStartX.current
+    const maxTravel = getFieldWidth() - PENCIL_W - 8
+    if (modeAtDragStart.current === 'idle') {
+      setPencilOffset(Math.max(0, Math.min(dx, maxTravel)))
+    } else {
+      setPencilOffset(Math.min(0, Math.max(dx, -maxTravel)))
     }
+  }, []) // no isDragging dependency — uses ref
 
-    const detach = () => {
-      active = false
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup',   onUp)
-      window.removeEventListener('pointercancel', onCancel)
+  const handlePointerUp = useCallback((e) => {
+    if (!isDraggingRef.current || pointerStartX.current === null) return
+    const dx = e.clientX - pointerStartX.current
+    const fieldW = getFieldWidth()
+    if (modeAtDragStart.current === 'idle') {
+      dx / fieldW >= 0.8 ? enterEdit() : springBack()
+    } else {
+      -dx / fieldW >= 0.8 ? save() : springBack()
     }
+  }, [enterEdit, save, springBack]) // no isDragging dependency — uses ref
 
-    const onUp = (e) => {
-      if (!active) return
-      const dx = e.clientX - startX
-      const fw = getW()
-      detach()
-      setIsDragging(false)
-      if (startMode === 'idle') {
-        dx / fw >= 0.8 ? enterEdit() : setPencilOffset(0)
-      } else {
-        -dx / fw >= 0.8 ? save() : setPencilOffset(0)
-      }
-    }
-
-    const onCancel = () => {
-      detach()
-      setIsDragging(false)
-      setPencilOffset(0)
-    }
-
-    const onDown = (e) => {
-      e.preventDefault()
-      active    = true
-      startX    = e.clientX
-      startMode = modeRef.current // read current mode synchronously via ref
-      setIsDragging(true)
-      setPencilOffset(0)
-      window.addEventListener('pointermove',   onMove,    { passive: false })
-      window.addEventListener('pointerup',     onUp)
-      window.addEventListener('pointercancel', onCancel)
-    }
-
-    pencilEl.addEventListener('pointerdown', onDown, { passive: false })
-    return () => {
-      pencilEl.removeEventListener('pointerdown', onDown)
-      detach()
-    }
-  }, [enterEdit, save]) // both stable — this effect runs exactly once on mount
+  const handlePointerCancel = useCallback(() => springBack(), [springBack])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') { e.preventDefault(); cancel() }
     if (e.key === 'Enter' && !multiline) { e.preventDefault(); save() }
   }, [cancel, save, multiline])
 
-  // ── Derived visual state ──────────────────────────────────────────────────
-  const containerW = containerRef.current?.offsetWidth || 300
-  const maxTravel  = containerW - PENCIL_W - 8
-  const progress   = isDragging
-    ? Math.max(0, Math.min(1, Math.abs(pencilOffset) / maxTravel))
+  // ── Derived visuals ──────────────────────────────────────────────────────
+  const fieldW = typeof window !== 'undefined' ? getFieldWidth() : 300
+  const maxTravel = fieldW - PENCIL_W - 8
+  const progress = isDraggingVisual
+    ? modeAtDragStart.current === 'idle'
+      ? Math.max(0, Math.min(1, pencilOffset / maxTravel))
+      : Math.max(0, Math.min(1, -pencilOffset / maxTravel))
     : 0
   const atThreshold = progress >= 0.8
 
-  const fillStyle = isDragging ? {
+  const fillStyle = isDraggingVisual ? {
     position: 'absolute',
     top: 0,
     bottom: 0,
     pointerEvents: 'none',
-    ...(mode === 'idle'
+    ...(modeAtDragStart.current === 'idle'
       ? { left: 0, width: `${pencilOffset + PENCIL_W / 2}px` }
       : { right: 0, width: `${-pencilOffset + PENCIL_W / 2}px` }
     ),
     background: atThreshold
       ? 'linear-gradient(90deg, rgba(146,96,10,0.14) 0%, rgba(146,96,10,0.05) 100%)'
       : 'linear-gradient(90deg, rgba(146,96,10,0.07) 0%, rgba(146,96,10,0.02) 100%)',
+    transition: 'background 0.12s ease',
   } : null
 
   const pencilStyle = {
     position: 'absolute',
     top: multiline ? '12px' : '50%',
     ...(mode === 'idle' ? { left: '4px' } : { right: '4px' }),
-    transform: `translateY(${multiline ? 0 : -50}%) translateX(${pencilOffset}px)`,
+    transform: mode === 'idle'
+      ? `translateY(${multiline ? 0 : -50}%) translateX(${pencilOffset}px)`
+      : `translateY(${multiline ? 0 : -50}%) translateX(${pencilOffset}px)`,
     width: `${PENCIL_W}px`,
     height: `${PENCIL_W}px`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: isDragging ? 'grabbing' : 'grab',
+    cursor: isDraggingVisual ? 'grabbing' : 'grab',
     border: 'none',
     borderRadius: '6px',
-    padding: 0,
     background: atThreshold
       ? 'rgba(146,96,10,0.18)'
-      : isDragging
+      : isDraggingVisual
         ? 'rgba(146,96,10,0.10)'
         : mode === 'editing'
           ? 'rgba(146,96,10,0.07)'
           : 'transparent',
-    color: isDragging || mode === 'editing' ? 'var(--accent)' : 'var(--text-muted)',
-    transition: isDragging
+    color: isDraggingVisual || mode === 'editing' ? 'var(--accent)' : 'var(--text-muted)',
+    transition: isDraggingVisual
       ? 'background 0.12s, color 0.12s'
       : 'background 0.25s, color 0.25s, transform 0.22s cubic-bezier(0.34,1.56,0.64,1)',
     zIndex: 10,
     touchAction: 'none',
     userSelect: 'none',
     flexShrink: 0,
+    padding: 0,
   }
 
   return (
@@ -254,7 +230,7 @@ export default function DragToEditField({
               color: value ? 'var(--text-primary)' : 'var(--text-muted)',
               lineHeight: '1.5',
               userSelect: 'none',
-              opacity: isDragging ? 0.5 : 1,
+              opacity: isDraggingVisual ? 0.5 : 1,
               transition: 'opacity 0.15s',
               whiteSpace: multiline ? 'pre-wrap' : 'nowrap',
               overflow: 'hidden',
@@ -266,10 +242,7 @@ export default function DragToEditField({
             <textarea
               ref={inputRef}
               value={value}
-              onChange={e => {
-                setValue(e.target.value)
-                valueRef.current = e.target.value // keep ref in sync synchronously
-              }}
+              onChange={e => setValue(e.target.value)}
               onBlur={() => save()}
               onKeyDown={handleKeyDown}
               rows={3}
@@ -291,10 +264,7 @@ export default function DragToEditField({
               ref={inputRef}
               type={type}
               value={value}
-              onChange={e => {
-                setValue(e.target.value)
-                valueRef.current = e.target.value // keep ref in sync synchronously
-              }}
+              onChange={e => setValue(e.target.value)}
               onBlur={() => save()}
               onKeyDown={handleKeyDown}
               style={{
@@ -311,16 +281,19 @@ export default function DragToEditField({
           )}
         </div>
 
-        {/* Pencil — ref attached for native event listener */}
+        {/* Pencil drag handle */}
         <button
-          ref={pencilRef}
           aria-label={mode === 'idle' ? `Edit ${label}` : `Save ${label}`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           style={pencilStyle}
         >
           <Pencil
             size={13}
-            strokeWidth={mode === 'editing' || isDragging ? 2.5 : 1.75}
-            style={{ transition: 'stroke-width 0.2s', pointerEvents: 'none' }}
+            strokeWidth={mode === 'editing' || isDraggingVisual ? 2.5 : 1.75}
+            style={{ transition: 'stroke-width 0.2s' }}
           />
         </button>
       </div>
