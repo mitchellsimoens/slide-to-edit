@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Instrument_Serif } from 'next/font/google'
 import { MapPin, Globe, Briefcase } from 'lucide-react'
 import DragToEditField from './components/DragToEditField'
@@ -70,7 +70,12 @@ function MetaBadge({ icon: Icon, children }) {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState(INITIAL)
-  const update = (key) => (val) => setProfile(p => ({ ...p, [key]: val }))
+  // useCallback so each field gets a stable onSave ref — prevents the
+  // DragToEditField useEffect from re-running between renders
+  const update = useCallback(
+    (key) => (val) => setProfile(p => ({ ...p, [key]: val })),
+    []
+  )
 
   return (
     <main style={{
